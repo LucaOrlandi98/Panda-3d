@@ -1,0 +1,98 @@
+<div id="panda-3d" style="height:600px; background:#f6f7fb; border-radius:16px;"></div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function(){
+  // === DATA ===
+  const PARTS=[{id:'hood',name:'Cofano',price:50,color:'#c62828'},
+               {id:'roof',name:'Tetto',price:80,color:'#424242'},
+               {id:'door_l',name:'Porta SX',price:60,color:'#1976d2'},
+               {id:'door_r',name:'Porta DX',price:60,color:'#1976d2'},
+               {id:'trunk',name:'Portellone',price:55,color:'#388e3c'},
+               {id:'wheel_fl',name:'Ruota Ant. SX',price:25,color:'#212121'},
+               {id:'wheel_fr',name:'Ruota Ant. DX',price:25,color:'#212121'},
+               {id:'wheel_bl',name:'Ruota Post. SX',price:25,color:'#212121'},
+               {id:'wheel_br',name:'Ruota Post. DX',price:25,color:'#212121'}];
+
+  const state={selected:new Set()};
+  const host=document.getElementById('panda-3d');
+  const scene=new THREE.Scene();
+  const camera=new THREE.PerspectiveCamera(45,host.clientWidth/host.clientHeight,0.1,100);
+  camera.position.set(4.5,2.6,4.6);
+
+  const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.setSize(host.clientWidth,host.clientHeight);
+  host.appendChild(renderer.domElement);
+
+  const controls=new THREE.OrbitControls(camera,renderer.domElement);
+  controls.enablePan=false; controls.enableDamping=true; controls.dampingFactor=0.06;
+  controls.autoRotate=true; controls.autoRotateSpeed=0.5;
+
+  // luci & ground
+  scene.add(new THREE.HemisphereLight(0xffffff,0x999999,.7));
+  const dir=new THREE.DirectionalLight(0xffffff,.9); dir.position.set(5,5,5); dir.castShadow=true; scene.add(dir);
+  const ground=new THREE.Mesh(new THREE.PlaneGeometry(20,20),new THREE.MeshStandardMaterial({color:0xeeeeee}));
+  ground.rotation.x=-Math.PI/2; ground.receiveShadow=true; scene.add(ground);
+
+  // modello “a blocchi”
+  const car=new THREE.Group(); scene.add(car);
+  const mtl=(hex)=>new THREE.MeshStandardMaterial({color:new THREE.Color(hex)});
+  const materials={
+    hood:{base:mtl('#c62828'),sel:mtl('#ff5252')},
+    roof:{base:mtl('#424242'),sel:mtl('#9e9e9e')},
+    door_l:{base:mtl('#1976d2'),sel:mtl('#42a5f5')},
+    door_r:{base:mtl('#1976d2'),sel:mtl('#42a5f5')},
+    trunk:{base:mtl('#388e3c'),sel:mtl('#66bb6a')},
+    wheel_fl:{base:mtl('#212121'),sel:mtl('#757575')},
+    wheel_fr:{base:mtl('#212121'),sel:mtl('#757575')},
+    wheel_bl:{base:mtl('#212121'),sel:mtl('#757575')},
+    wheel_br:{base:mtl('#212121'),sel:mtl('#757575')}
+  };
+  const meshes={};
+  meshes.hood=new THREE.Mesh(new THREE.BoxGeometry(3.2,1.2,1.6),materials.hood.base); meshes.hood.position.set(0,0.6,0); car.add(meshes.hood);
+  meshes.roof=new THREE.Mesh(new THREE.BoxGeometry(2.88,0.5,1.44),materials.roof.base); meshes.roof.position.set(0,1.6,0); car.add(meshes.roof);
+  meshes.door_l=new THREE.Mesh(new THREE.BoxGeometry(1.4,1.0,0.05),materials.door_l.base); meshes.door_l.position.set(-0.3,0.6,0.81); car.add(meshes.door_l);
+  meshes.door_r=new THREE.Mesh(new THREE.BoxGeometry(1.4,1.0,0.05),materials.door_r.base); meshes.door_r.position.set(-0.3,0.6,-0.81); car.add(meshes.door_r);
+  meshes.trunk=new THREE.Mesh(new THREE.BoxGeometry(1.2,1.0,0.05),materials.trunk.base); meshes.trunk.rotation.z=Math.PI/2; meshes.trunk.position.set(1.61,0.7,0); car.add(meshes.trunk);
+  const wheelGeo=new THREE.CylinderGeometry(0.35,0.35,0.25,24);
+  function wheel(id,x,y,z){ const w=new THREE.Mesh(wheelGeo,materials[id].base); w.position.set(x,y,z); car.add(w); meshes[id]=w; }
+  wheel('wheel_fl',-1.0,0.35, 0.5); wheel('wheel_fr',-1.0,0.35,-0.5);
+  wheel('wheel_bl', 1.0,0.35, 0.5); wheel('wheel_br', 1.0,0.35,-0.5);
+
+  // fit camera
+  (function fit(){
+    const box=new THREE.Box3().setFromObject(car); const size=box.getSize(new THREE.Vector3()).length();
+    const center=box.getCenter(new THREE.Vector3()); const fov=camera.fov*(Math.PI/180);
+    let dist=Math.abs(size/(2*Math.tan(fov/2))); dist*=1.2;
+    camera.position.copy(center).add(new THREE.Vector3(dist,dist*0.45,dist));
+    controls.target.copy(center); controls.update();
+  })();
+
+  // picking
+  const ray=new THREE.Raycaster(); const mouse=new THREE.Vector2();
+  function refresh(){
+    for(const id in meshes){
+      meshes[id].material = state.selected.has(id) ? materials[id].sel : materials[id].base;
+    }
+  }
+  function toggle(id){
+    if(state.selected.has(id)) state.selected.delete(id); else state.selected.add(id);
+    refresh();
+  }
+  renderer.domElement.addEventListener('click',function(ev){
+    const r=renderer.domElement.getBoundingClientRect();
+    mouse.x=((ev.clientX-r.left)/r.width)*2-1; mouse.y=-((ev.clientY-r.top)/r.height)*2+1;
+    ray.setFromCamera(mouse,camera);
+    const hits=ray.intersectObjects(Object.values(meshes));
+    if(hits.length){
+      const id=Object.keys(meshes).find(k=>meshes[k]===hits[0].object);
+      if(id) toggle(id);
+    }
+  });
+
+  // loop & resize
+  window.addEventListener('resize',()=>{ const w=host.clientWidth,h=host.clientHeight; renderer.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix(); });
+  (function loop(){ requestAnimationFrame(loop); controls.update(); renderer.render(scene,camera); })();
+})();
+</script>
